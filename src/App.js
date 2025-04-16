@@ -22,9 +22,18 @@ import Contact from "./components/Contact";
 import "./style.css";
 
 // Firebase imports
+import { app, db, auth, googleProvider, storage } from "./firebaseConfig";
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  collection, 
+  query, 
+  orderBy, 
+  getDocs 
+} from "firebase/firestore";
 import {
   Tldraw,
   DefaultToolbar,
@@ -65,53 +74,54 @@ import CustomActionsMenu from "./components/CustomActionsMenu";
 // Firebase configuration
 
 
-const CustomToolbar = (props) => {
+{
+  /* const CustomToolbar = (props) => {
   const tools = useTools();
   // const isCollectionToolSelected = useIsToolSelected(tools["collection"]);
 
   return (
     <DefaultToolbar {...props}>
-      {/* Group Tool */}
-      {/* <TldrawUiMenuItem {...tools["group"]} isSelected={isGroupToolSelected} /> */}
+      {/* Group Tool */
+}
+{
+  /* <TldrawUiMenuItem {...tools["group"]} isSelected={isGroupToolSelected} /> */
+}
 
-      {/* Collection Tool with Custom Icon 
-      <button
+{
+  /* Collection Tool with Custom Icon */
+}
+{
+  /* <button
         onClick={() => tools["collection"].onSelect()}
         style={{
-           background: isCollectionToolSelected ? "#e6f7ff" : "transparent", // Highlight when selected
-           border: isCollectionToolSelected ? "2px solid #1890ff" : "none", // Add border when selected
+          background: isCollectionToolSelected ? "#e6f7ff" : "transparent", // Highlight when selected
+          border: isCollectionToolSelected ? "2px solid #1890ff" : "none", // Add border when selected
           padding: "8px",
           borderRadius: "4px", // Match the default button style
           cursor: "pointer",
         }}
         title="Collection Tool"
       >
-        {/* <CircleWithArrowsIcon
+        <CircleWithArrowsIcon
           style={{
             fill: isCollectionToolSelected ? "#1890ff" : "none", // Change icon color when selected
             stroke: isCollectionToolSelected ? "#1890ff" : "black",
           }}
-        />{" "} 
-      </button>*/}
+        />{" "}
+      </button>
       <DefaultToolbarContent />
     </DefaultToolbar>
   );
-};
-
-const components = {
-  Navbar: Navbar,
-  ContextMenu: CustomContextMenu,
-  InFrontOfTheCanvas: ContextToolbarComponent,
-  // Toolbar: DefaultToolbar,
-  Toolbar: CustomToolbar,
-  ActionsMenu: CustomActionsMenu,
-};
+}; */
+}
 
 
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+//const app = initializeApp(firebaseConfig);
+//const auth = getAuth(app);
+//const db = getFirestore(app);
+
 const provider = new GoogleAuthProvider();
 const App = () => {
   const navigate = useNavigate();
@@ -139,8 +149,10 @@ const App = () => {
             if (data.role === "teacher") {
                 navigate("/teachers-home");
             } else if (data.role === "student") {
-                navigate("/students-home");
-            }
+              navigate("/students-home");
+          } else {
+              navigate("/guest-home"); // Navigate to guest version
+          }
         } else {
             console.error(data.message);
         }
@@ -183,10 +195,12 @@ const App = () => {
   
   {/* Collaborative Whiteboard */}
   <Route path="/whiteboard/:className/:projectName/:teamName" element={<CollaborativeWhiteboard />} />
+  
 </Routes>
 
   );
 }
+
 
 const CollaborativeWhiteboard = () => {
   const { className, projectName, teamName } = useParams(); // Get params from URL
@@ -196,14 +210,59 @@ const CollaborativeWhiteboard = () => {
   const [shapeReactions, setShapeReactions] = useState({});
   const [selectedShape, setSelectedShape] = useState(null);
   const [commentCounts, setCommentCounts] = useState({});
+  const [comments, setComments] = useState({});
+  const [actionHistory, setActionHistory] = useState([]);
 
-  const handleReactionClick = (shapeId, reactionType) => {
+  const fetchActionHistory = async (userContext, setActionHistory) => {
+    if (!userContext) return;
+
+    console.log(`---- User Context --- ${userContext}`);
+
+    const { className, projectName, teamName } = userContext;
+    const historyRef = collection(
+      db,
+      `classrooms/${className}/Projects/${projectName}/teams/${teamName}/history`
+    );
+
+    try {
+      const q = query(historyRef, orderBy("timestamp", "desc"));
+      const querySnapshot = await getDocs(q);
+      const historyLogs = querySnapshot.docs.map((doc) => doc.data());
+      console.log(historyLogs[0].message);
+
+      setActionHistory(historyLogs);
+    } catch (error) {
+      console.error("❌ Error fetching history:", error);
+    }
+  };
+
+  // Fetch logs when component mounts
+  useEffect(() => {
+    if (!className || !projectName || !teamName) return;
+
+    const userContext = { className, projectName, teamName };
+    fetchActionHistory(userContext, setActionHistory);
+  }, [className, projectName, teamName]);
+
+  const components = {
+    Navbar: Navbar,
+    ContextMenu: CustomContextMenu,
+    InFrontOfTheCanvas: ContextToolbarComponent,
+    Toolbar: DefaultToolbar,
+    // Toolbar: CustomToolbar,
+    ActionsMenu: CustomActionsMenu,
+  };
+
+  const handleReactionClick = (reactionData) => {
+    console.log("Received reactionData in App.js:", reactionData);
+    const { shapeId, userId, reactionType, timestamp } = reactionData;
+
     setShapeReactions((prevReactions) => {
       const currentReactions = prevReactions[shapeId] || {
-        Like: 0,
-        Dislike: 0,
-        Surprised: 0,
-        Confused: 0,
+        like: 0,
+        dislike: 0,
+        surprised: 0,
+        confused: 0,
       };
 
       return {
@@ -213,9 +272,44 @@ const CollaborativeWhiteboard = () => {
           [reactionType]:
             currentReactions[reactionType] > 0
               ? currentReactions[reactionType] - 1
-              : currentReactions[reactionType] + 1, // Increment reaction
+              : currentReactions[reactionType] + 1,
         },
       };
+    });
+
+    setActionHistory((prev) => [
+      ...prev,
+      {
+        userId: userId,
+        action: `${reactionType}`,
+        shapeId,
+        timestamp,
+      },
+    ]);
+  };
+
+  const addComment = (shapeId, commentData) => {
+    console.log("Adding comment for shapeId:", shapeId);
+
+    const commentDataWithTime = {
+      ...commentData,
+      timestamp: new Date().toLocaleString(),
+    };
+
+    setComments((prevComments) => {
+      const updatedComments = {
+        ...prevComments,
+        [shapeId]: [...(prevComments[shapeId] || []), commentDataWithTime],
+      };
+      return updatedComments;
+    });
+
+    setCommentCounts((prevCounts) => {
+      const updatedCounts = {
+        ...prevCounts,
+        [shapeId]: (prevCounts[shapeId] || 0) + 1,
+      };
+      return updatedCounts;
     });
   };
 
@@ -236,6 +330,10 @@ const CollaborativeWhiteboard = () => {
               setSelectedShape={setSelectedShape}
               commentCounts={commentCounts}
               setCommentCounts={setCommentCounts}
+              comments={comments}
+              setComments={setComments}
+              actionHistory={actionHistory}
+              setActionHistory={setActionHistory}
             />
           ),
           InFrontOfTheCanvas: (props) => (
@@ -245,9 +343,11 @@ const CollaborativeWhiteboard = () => {
               shapeReactions={shapeReactions}
               commentCounts={commentCounts}
               onReactionClick={handleReactionClick}
+              addComment={addComment}
+              setActionHistory={setActionHistory}
             />
           ),
-          Toolbar: CustomToolbar,
+          // Toolbar: CustomToolbar,
           ActionsMenu: (props) => <CustomActionsMenu {...props} />,
         }}
       />

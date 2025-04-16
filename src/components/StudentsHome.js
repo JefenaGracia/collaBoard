@@ -127,7 +127,7 @@ const StudentHome = () => {
   }, [userEmail]);
 
   return (
-    <div className="container student-dashboard-container mt-4">
+    <div className="student-dashboard mt-4">
       {loading ? (
         <p>Loading...</p>
       ) : userEmail ? (

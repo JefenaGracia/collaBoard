@@ -9,7 +9,7 @@ export default function CommentBox({
   logAction,
 }) {
   const [commentData, setCommentData] = useState({
-    userId: "User123",
+    userId: "name",
     timestamp: new Date().toLocaleString(),
     text: "",
   });

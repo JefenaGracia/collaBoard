@@ -65,7 +65,8 @@ const Navbar = () => {
               <li
                 className="nav-link"
                 onClick={handleProfileClick}
-                style={{ paddingTop: "10px", cursor: "pointer" }}
+                style={{ paddingTop: "10px", cursor: "pointer", position: "relative",
+                  zIndex: isProfileOpen ? 9999 : 1000, }}
               >
                 <i
                   className="bi bi-list"
